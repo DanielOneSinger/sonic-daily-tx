@@ -4,6 +4,8 @@ const sol = require("@solana/web3.js");
 const bs58 = require("bs58");
 const prompts = require('prompts');
 const nacl = require("tweetnacl");
+const HttpsProxyAgent = require('https-proxy-agent');
+
 
 const captchaKey = 'INSERT_YOUR_2CAPTCHA_KEY_HERE';
 const rpc = 'https://devnet.sonic.game/';
@@ -53,6 +55,16 @@ const sendTransaction = (transaction, keyPair) => new Promise(async (resolve) =>
     }
 });
 
+const fetchIp = async () => {
+    let options = {
+        method: 'GET',
+        uri: 'http://api.tq.roxlabs.cn/getProxyIp?num=500&return_type=json&lb=4&sb=&flow=1&regions=&protocol=http',
+        json: true // Automatically stringifies the body to JSON
+    };
+    let res =  await request(options)
+    return res.data
+};
+
 const delay = (seconds) => {
     return new Promise((resolve) => {
         return setTimeout(resolve, seconds * 1000);
@@ -95,7 +107,7 @@ const twocaptcha_turnstile = (sitekey, pageurl) => new Promise(async (resolve) =
     }
 });
 
-const claimFaucet = (address) => new Promise(async (resolve) => {
+const claimFaucet = (address, agent) => new Promise(async (resolve) => {
     let success = false;
     
     while (!success) {
@@ -118,7 +130,8 @@ const claimFaucet = (address) => new Promise(async (resolve) => {
                     "User-Agent": bearer.useragent,
                     "sec-ch-ua-mobile": "?0",
                     "sec-ch-ua-platform": "Windows",
-                }
+                },
+                agent: agent
             }).then(res => res.json());
     
             if (res.status == 'ok') {
@@ -134,7 +147,7 @@ const claimFaucet = (address) => new Promise(async (resolve) => {
     }
 });
 
-const getLoginToken = (keyPair) => new Promise(async (resolve) => {
+const getLoginToken = (keyPair,agent) => new Promise(async (resolve) => {
     let success = false;
     while (!success) {
         try {
@@ -153,7 +166,8 @@ const getLoginToken = (keyPair) => new Promise(async (resolve) => {
                     'address': `${publicKey}`,
                     'address_encoded': `${addressEncoded}`,
                     'signature': `${signature}`
-                })
+                }),
+                agent: agent //add proxy
             }).then(res => res.json());
         
             const token = authorize.data.token;
@@ -163,7 +177,7 @@ const getLoginToken = (keyPair) => new Promise(async (resolve) => {
     }
 });
 
-const dailyCheckin = (keyPair, auth) => new Promise(async (resolve) => {
+const dailyCheckin = (keyPair, auth, agent) => new Promise(async (resolve) => {
     let success = false;
     while (!success) {
         try {
@@ -171,7 +185,8 @@ const dailyCheckin = (keyPair, auth) => new Promise(async (resolve) => {
                 headers: {
                     ...defaultHeaders,
                     'authorization': `${auth}`
-                }
+                },
+                agent: agent
             }).then(res => res.json());
             
             if (data.message == 'current account already checked in') {
@@ -191,7 +206,8 @@ const dailyCheckin = (keyPair, auth) => new Promise(async (resolve) => {
                     },
                     body: JSON.stringify({
                         'hash': `${signature}`
-                    })
+                    }),
+                    agent: agent
                 }).then(res => res.json());
                 
                 success = true;
@@ -201,7 +217,7 @@ const dailyCheckin = (keyPair, auth) => new Promise(async (resolve) => {
     }
 });
 
-const dailyMilestone = (auth, stage) => new Promise(async (resolve) => {
+const dailyMilestone = (auth, stage, agent) => new Promise(async (resolve) => {
     let success = false;
     while (!success) {
         try {
@@ -211,6 +227,7 @@ const dailyMilestone = (auth, stage) => new Promise(async (resolve) => {
                     ...defaultHeaders,
                     'authorization': `${auth}`
                 },
+                agent: agent
             });
 
             const data = await fetch('https://odyssey-api.sonic.game/user/transactions/rewards/claim', {
@@ -221,7 +238,8 @@ const dailyMilestone = (auth, stage) => new Promise(async (resolve) => {
                 },
                 body: JSON.stringify({
                     'stage': stage
-                })
+                }),
+                agent: agent
             }).then(res => res.json());
             
             if (data.message == 'interact rewards already claimed') {
@@ -237,7 +255,7 @@ const dailyMilestone = (auth, stage) => new Promise(async (resolve) => {
     }
 });
 
-const openBox = (keyPair, auth) => new Promise(async (resolve) => {
+const openBox = (keyPair, auth, agent) => new Promise(async (resolve) => {
     let success = false;
     while (!success) {
         try {
@@ -245,7 +263,8 @@ const openBox = (keyPair, auth) => new Promise(async (resolve) => {
                 headers: {
                     ...defaultHeaders,
                     'authorization': auth
-                }
+                },
+                agent: agent
             }).then(res => res.json());
 
             if (data.data) {
@@ -261,7 +280,8 @@ const openBox = (keyPair, auth) => new Promise(async (resolve) => {
                     },
                     body: JSON.stringify({
                         'hash': signature
-                    })
+                    }),
+                    agent: agent
                 }).then(res => res.json());
 
                 if (open.data) {
@@ -273,7 +293,7 @@ const openBox = (keyPair, auth) => new Promise(async (resolve) => {
     }
 });
 
-const getUserInfo = (auth) => new Promise(async (resolve) => {
+const getUserInfo = (auth, agent) => new Promise(async (resolve) => {
     let success = false;
     while (!success) {
         try {
@@ -281,7 +301,8 @@ const getUserInfo = (auth) => new Promise(async (resolve) => {
                 headers: {
                   ...defaultHeaders,
                   'authorization': `${auth}`,
-                }
+                },
+                agent: agent
             }).then(res => res.json());
             
             if (data.data) {
@@ -359,11 +380,27 @@ function extractAddressParts(address) {
     const addressCount = 100;
     const amountToSend = 0.001; // in SOL
     const delayBetweenRequests = 5; // in seconds
+    let ips = []
+    ips = await fetchIp()
 
     // DOING TASK FOR EACH PRIVATE KEY
         for(let index = (q.index - 1); index < keypairs.length; index++) {
             const publicKey = keypairs[index].publicKey.toBase58();
             const randomAddresses = generateRandomAddresses(addressCount);
+
+            let ip
+            try {
+                 if (!ips || ips.length <= 0) {
+                     ips = await fetchIp()
+                 }
+                 ip = ips.pop()
+            } catch (e) {
+                 ips = await fetchIp()
+                 ip = ips.pop()
+            }
+
+            let proxy = `http://${ip.ip}:${ip.port}`
+            const agent = new HttpsProxyAgent(proxy);
 
             twisters.put(`${publicKey}`, { 
                 text: ` === ACCOUNT ${(index + 1)} ===
@@ -373,8 +410,8 @@ Mystery Box  : -
 Status       : Getting user token...`
             });
 
-            let token = await getLoginToken(keypairs[index]);
-            const initialInfo = await getUserInfo(token);
+            let token = await getLoginToken(keypairs[index],agent);
+            const initialInfo = await getUserInfo(token, agent);
             let info = initialInfo;
     
             twisters.put(`${publicKey}`, { 
@@ -394,7 +431,7 @@ Points       : ${info.ring}
 Mystery Box  : ${info.ring_monitor}
 Status       : Trying to claim faucet...`
                 });
-                const faucetStatus = await claimFaucet(keypairs[index].publicKey.toBase58());
+                const faucetStatus = await claimFaucet(keypairs[index].publicKey.toBase58(), agent);
                 twisters.put(`${publicKey}`, { 
                     text: ` === ACCOUNT ${(index + 1)} ===
 Address      : ${publicKey}
@@ -440,7 +477,7 @@ Status       : [${(i + 1)}/${randomAddresses.length}] Failed to sent ${amountToS
                 }
             }
 
-            token = await getLoginToken(keypairs[index]);
+            token = await getLoginToken(keypairs[index], agent);
     
             // CHECK IN TASK
             twisters.put(`${publicKey}`, { 
@@ -450,8 +487,8 @@ Points       : ${info.ring}
 Mystery Box  : ${info.ring_monitor}
 Status       : Try to daily check in...`
             });
-            const checkin = await dailyCheckin(keypairs[index], token);
-            info = await getUserInfo(token);
+            const checkin = await dailyCheckin(keypairs[index], token, agent);
+            info = await getUserInfo(token, agent);
             twisters.put(`${publicKey}`, { 
                 text: ` === ACCOUNT ${(index + 1)} ===
 Address      : ${publicKey}
@@ -470,7 +507,7 @@ Mystery Box  : ${info.ring_monitor}
 Status       : Try to claim milestones...`
             });
             for (let i = 1; i <= 3; i++) {
-                const milestones = await dailyMilestone(token, i);
+                const milestones = await dailyMilestone(token, i, agent);
                 twisters.put(`${publicKey}`, { 
                     text: ` === ACCOUNT ${(index + 1)} ===
 Address      : ${publicKey}
@@ -481,7 +518,7 @@ Status       : ${milestones}`
                 await delay(delayBetweenRequests);
             }
 
-            info = await getUserInfo(token);
+            info = await getUserInfo(token, agent);
             let msg = `Earned ${(info.ring_monitor - initialInfo.ring_monitor)} Mystery Box\nYou have ${info.ring} Points and ${info.ring_monitor} Mystery Box now.`;
 
             if (q.openBox) {
@@ -495,8 +532,8 @@ Status       : Preparing for open ${totalBox} mystery boxes...`
                 });
 
                 for (let i = 0; i < totalBox; i++) {
-                    const openedBox = await openBox(keypairs[index], token);
-                    info = await getUserInfo(token);
+                    const openedBox = await openBox(keypairs[index], token, agent);
+                    info = await getUserInfo(token, agent);
                     twisters.put(`${publicKey}`, { 
                         text: ` === ACCOUNT ${(index + 1)} ===
 Address      : ${publicKey}
@@ -507,7 +544,7 @@ Status       : [${(i + 1)}/${totalBox}] You got ${openedBox} points!`
                     await delay(delayBetweenRequests);
                 }
 
-                info = await getUserInfo(token);
+                info = await getUserInfo(token, agent);
                 msg = `Earned ${(info.ring - initialInfo.ring)} Points\nYou have ${info.ring} Points and ${info.ring_monitor} Mystery Box now.`;
             }
                 
