@@ -322,7 +322,9 @@ function extractAddressParts(address) {
         .split("\n")
         .map((a) => a.trim());
     for (const privateKey of listAccounts) {
-        keypairs.push(getKeypairFromPrivateKey(privateKey));
+        if (privateKey.length > 0) {
+            keypairs.push(getKeypairFromPrivateKey(privateKey));
+        }
     }
     if (keypairs.length === 0) {
         throw new Error('Please fill at least 1 private key in private.txt');
