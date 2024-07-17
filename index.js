@@ -37,6 +37,11 @@ function generateRandomAddresses(count) {
     return addresses;
 }
 
+function getRandomSolAmount(min, max, decimals = 9) {
+    const randomValue = Math.random() * (max - min) + min;
+    return Number(randomValue.toFixed(decimals));
+}
+
 function getKeypairFromPrivateKey(privateKey) {
     const decoded = bs58.decode(privateKey);
     return sol.Keypair.fromSecretKey(decoded);
@@ -378,7 +383,8 @@ function extractAddressParts(address) {
 
     // CUSTOM YOURS
     const addressCount = 100;
-    const amountToSend = 0.001; // in SOL
+    const minAmount = 0.001; // in SOL
+    const maxAmount = 0.003;
     const delayBetweenRequests = 5; // in seconds
     let ips = []
     ips = await fetchIp()
@@ -445,6 +451,7 @@ Status       : ${faucetStatus}`
            // SENDING SOL
             for (const [i, address] of randomAddresses.entries()) {
                 try {
+                    const amountToSend = getRandomSolAmount(minAmount, maxAmount);
                     const toPublicKey = new sol.PublicKey(address);
                     const transaction = new sol.Transaction().add(
                         sol.SystemProgram.transfer({
